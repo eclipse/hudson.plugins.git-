@@ -37,7 +37,7 @@
             <table width="100%">
                 <f:entry title="URL of repository">
                     <f:textbox name="git.repo.url" value="${repo.URIs.get(0).toPrivateString()}"
-                            checkUrl="'descriptorByName/GitSCM/checkRepositoryUrl?value='+this.value"/>
+                            checkUrl="'descriptorByName/hudson.plugins.git.GitSCM/checkRepositoryUrl?value='+this.value"/>
                 </f:entry>
                 <f:advanced>
                     <f:entry title="Name of repository (blank to create default)">

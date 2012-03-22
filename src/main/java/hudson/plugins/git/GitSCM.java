@@ -14,22 +14,12 @@
  *******************************************************************************/
 package hudson.plugins.git;
 
-import hudson.plugins.git.browser.GitRepositoryBrowser;
-import hudson.plugins.git.opt.PreBuildMergeOptions;
-import hudson.plugins.git.util.BuildChooser;
-import hudson.plugins.git.util.BuildChooserDescriptor;
-import hudson.plugins.git.util.BuildData;
-import hudson.plugins.git.util.DefaultBuildChooser;
-import hudson.plugins.git.util.GitConstants;
-import hudson.plugins.git.util.GitUtils;
-import hudson.plugins.git.util.Build;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.FilePath.FileCallable;
 import hudson.Launcher;
 import hudson.Util;
-import hudson.XmlFile;
 import hudson.matrix.MatrixBuild;
 import hudson.matrix.MatrixRun;
 import hudson.model.AbstractBuild;
@@ -37,12 +27,24 @@ import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
 import hudson.model.Descriptor;
 import hudson.model.Hudson;
+import hudson.model.Items;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.ParametersAction;
 import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
+import hudson.plugins.git.browser.GitRepositoryBrowser;
+import hudson.plugins.git.converter.ObjectIdConverter;
+import hudson.plugins.git.converter.RemoteConfigConverter;
+import hudson.plugins.git.opt.PreBuildMergeOptions;
+import hudson.plugins.git.util.Build;
+import hudson.plugins.git.util.BuildChooser;
+import hudson.plugins.git.util.BuildChooserDescriptor;
+import hudson.plugins.git.util.BuildData;
+import hudson.plugins.git.util.DefaultBuildChooser;
+import hudson.plugins.git.util.GitConstants;
+import hudson.plugins.git.util.GitUtils;
 import hudson.remoting.VirtualChannel;
 import hudson.scm.ChangeLogParser;
 import hudson.scm.PollingResult;
@@ -91,8 +93,6 @@ import static hudson.Util.fixEmptyAndTrim;
  * @author Nigel Magnay
  */
 public class GitSCM extends SCM implements Serializable {
-    
-    private static final String GIT_SCM_GLOBAL_CONFIG_FILE = "git-scm-global-config.xml";
 
     public static final String GIT_BRANCH = "GIT_BRANCH";
     public static final String GIT_COMMIT = "GIT_COMMIT";
@@ -173,7 +173,6 @@ public class GitSCM extends SCM implements Serializable {
     private String gitConfigEmail;
 
     private boolean skipTag;
-    
 
     public Collection<SubmoduleConfig> getSubmoduleCfg() {
         return submoduleCfg;
@@ -315,6 +314,7 @@ public class GitSCM extends SCM implements Serializable {
         buildChooser.gitSCM = this; // set the owner
     }
 
+
     public Object readResolve() {
         // Migrate data
 
@@ -453,6 +453,7 @@ public class GitSCM extends SCM implements Serializable {
         DescriptorImpl gitDescriptor = ((DescriptorImpl) getDescriptor());
         return (gitDescriptor != null && gitDescriptor.isCreateAccountBaseOnCommitterEmail());
     }
+
 
     public boolean getSkipTag() {
         return this.skipTag;
@@ -690,6 +691,7 @@ public class GitSCM extends SCM implements Serializable {
         }
         return result;
     }
+
     /**
      * Returns build config.
      *
@@ -1021,21 +1023,8 @@ public class GitSCM extends SCM implements Serializable {
 
         public DescriptorImpl() {
             super(GitSCM.class, GitRepositoryBrowser.class);
+            beforeLoad();
             load();
-        }
-        
-        @Override
-        public XmlFile getConfigFile() {
-            File hudsonRoot = Hudson.getInstance().getRootDir();
-            File globalConfigFile = new File(hudsonRoot , GIT_SCM_GLOBAL_CONFIG_FILE);
-            
-            // For backward Compatibility
-            File oldGlobalConfigFile = new File(hudsonRoot, "hudson.plugins.git.GitSCM.xml");
-            if (oldGlobalConfigFile.exists()){
-                oldGlobalConfigFile.renameTo(globalConfigFile);
-            }
-            
-            return new XmlFile(globalConfigFile);
         }
 
         public void setGlobalConfigName(String globalConfigName) {
@@ -1048,6 +1037,19 @@ public class GitSCM extends SCM implements Serializable {
 
         public void setCreateAccountBaseOnCommitterEmail(boolean createAccountBaseOnCommitterEmail) {
             this.createAccountBaseOnCommitterEmail = createAccountBaseOnCommitterEmail;
+        }
+
+        /**
+         * Registering legacy converters and aliases for backward compatibility with org.spearce.jgit library
+         */
+        private void beforeLoad() {
+            Items.XSTREAM.alias("ObjectId", ObjectId.class);
+            Items.XSTREAM.alias("RemoteConfig", RemoteConfig.class);
+            Items.XSTREAM.alias("RemoteConfig", org.spearce.jgit.transport.RemoteConfig.class);
+            Items.XSTREAM.alias("RemoteConfig", GitRepository.class);
+            Items.XSTREAM.registerConverter(
+                new RemoteConfigConverter(Items.XSTREAM.getMapper(), Items.XSTREAM.getReflectionProvider()));
+            Run.XSTREAM.registerConverter(new ObjectIdConverter());
         }
 
         public String getDisplayName() {
@@ -1067,7 +1069,7 @@ public class GitSCM extends SCM implements Serializable {
             GitTool[] gitToolInstallations = Hudson.getInstance()
                 .getDescriptorByType(GitTool.DescriptorImpl.class)
                 .getInstallations();
-            return gitToolInstallations != null? Arrays.asList(gitToolInstallations) : Collections.<GitTool>emptyList();
+            return Arrays.asList(gitToolInstallations);
         }
 
         /**
@@ -1134,7 +1136,7 @@ public class GitSCM extends SCM implements Serializable {
                     req.getParameterValues("git.repo.refspec"),
                     req.getParameterValues("git.repo.relativeTargetDir"));
             } catch (IOException e1) {
-                throw new GitException(Messages.GitSCM_Repository_CreationExceptionMsg(), e1);
+                throw new GitException(hudson.plugins.git.Messages.GitSCM_Repository_CreationExceptionMsg(), e1);
             }
             List<BranchSpec> branches = createBranches(req.getParameterValues("git.branch"));
 
@@ -1183,7 +1185,7 @@ public class GitSCM extends SCM implements Serializable {
                                                                         String[] refSpecs, String[] relativeTargetDirs)
             throws IOException, FormException {
             if (GitUtils.isEmpty(urls)) {
-                throw new FormException(Messages.GitSCM_Repository_MissedRepositoryExceptionMsg(),
+                throw new FormException(hudson.plugins.git.Messages.GitSCM_Repository_MissedRepositoryExceptionMsg(),
                     "git.repo.url");
             }
             List<RemoteConfig> remoteRepositories = new ArrayList<RemoteConfig>();
@@ -1206,7 +1208,7 @@ public class GitSCM extends SCM implements Serializable {
                 try {
                     remoteRepositories = GitRepository.getAllGitRepositories(repoConfig);
                 } catch (Exception e) {
-                    throw new GitException(Messages.GitSCM_Repository_CreationExceptionMsg(), e);
+                    throw new GitException(hudson.plugins.git.Messages.GitSCM_Repository_CreationExceptionMsg(), e);
                 }
             }
             return remoteRepositories;
@@ -1303,7 +1305,7 @@ public class GitSCM extends SCM implements Serializable {
             throws IOException, ServletException {
             if (StringUtils.isEmpty(value)) {
                 return FormValidation.error(
-                    Messages.GitSCM_Repository_IncorrectRepositoryFormatMsg());
+                    hudson.plugins.git.Messages.GitSCM_Repository_IncorrectRepositoryFormatMsg());
             }
             Config repoConfig = new Config();
             repoConfig.setString("remote", GitUtils.DEFAULD_REPO_NAME, "url", value);
@@ -1311,7 +1313,7 @@ public class GitSCM extends SCM implements Serializable {
                 RemoteConfig.getAllRemoteConfigs(repoConfig);
             } catch (Exception e) {
                 return FormValidation.error(
-                    Messages.GitSCM_Repository_IncorrectRepositoryFormatMsg() + ": "
+                    hudson.plugins.git.Messages.GitSCM_Repository_IncorrectRepositoryFormatMsg() + ": "
                         + e.getMessage());
             }
             return FormValidation.ok();
@@ -1964,6 +1966,3 @@ public class GitSCM extends SCM implements Serializable {
     }
 
 }
-
-
-

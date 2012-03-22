@@ -17,7 +17,6 @@ package hudson.plugins.git;
 import hudson.DescriptorExtensionList;
 import hudson.EnvVars;
 import hudson.Extension;
-import hudson.XmlFile;
 import hudson.model.EnvironmentSpecific;
 import hudson.model.Hudson;
 import hudson.model.Node;
@@ -46,8 +45,6 @@ import org.kohsuke.stapler.StaplerRequest;
  * @author Jyrki Puttonen
  */
 public final class GitTool extends ToolInstallation implements NodeSpecific<GitTool>, EnvironmentSpecific<GitTool> {
-   
-    private static final String GIT_TOOL_GLOBAL_CONFIG_FILE = "git-tool-global-config.xml";
 
     @DataBoundConstructor
     public GitTool(String name, String home, List<? extends ToolProperty<?>> properties) {
@@ -90,7 +87,12 @@ public final class GitTool extends ToolInstallation implements NodeSpecific<GitT
     }
 
     private static GitTool[] getInstallations(DescriptorImpl descriptor) {
-        GitTool[] installations = descriptor.getInstallations();
+        GitTool[] installations = null;
+        try {
+            installations = descriptor.getInstallations();
+        } catch (NullPointerException e) {
+            installations = new GitTool[0];
+        }
         return null == installations ? new GitTool[0] : installations;
     }
 
@@ -114,20 +116,6 @@ public final class GitTool extends ToolInstallation implements NodeSpecific<GitT
         public DescriptorImpl() {
             super();
             load();
-        }
-        
-        @Override
-        public XmlFile getConfigFile() {
-            File hudsonRoot = Hudson.getInstance().getRootDir();
-            File globalConfigFile = new File(hudsonRoot, GIT_TOOL_GLOBAL_CONFIG_FILE);
-            
-            // For backward Compatibility
-            File oldGlobalConfigFile = new File(hudsonRoot, "hudson.plugins.git.GitTool.xml");
-            if (oldGlobalConfigFile.exists()){
-                oldGlobalConfigFile.renameTo(globalConfigFile);
-            }
-            
-            return new XmlFile(globalConfigFile);
         }
 
         @Override
@@ -154,4 +142,3 @@ public final class GitTool extends ToolInstallation implements NodeSpecific<GitT
     }
 
 }
-
